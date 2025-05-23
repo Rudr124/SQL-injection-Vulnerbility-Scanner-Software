@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>🚀 SQLi Scanner</title>
+  <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='style.css') }}">
+  <script src="https://cdn.socket.io/4.3.2/socket.io.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+<body>
+  <div id="three-background"></div>
+  <canvas id="matrix-background"></canvas>
+
+  <div class="logo">
+    <span>CyberAvenger</span>
+  </div>
+
+  <div class="theme-switcher">
+    <label class="switch">
+      <input type="checkbox" id="themeToggle">
+      <span class="slider"></span>
+    </label>
+  </div>
+
+  <div class="container">
+    <h1>🚀 SQL Injection Scanner</h1>
+    <form id="scan-form">
+      <input type="text" name="target_url" placeholder="Target URL" required />
+      <input type="text" name="csv_file" placeholder="CSV filename (e.g., payloads.csv)" required />
+      <div class="button-group">
+        <button type="submit">Start Scan</button>
+        <button type="button" id="stop-button" class="danger">Stop</button>
+      </div>
+    </form>
+
+    <div class="terminal">
+      <div class="terminal-header">Live Scan Terminal</div>
+      <div id="terminal-body"></div>
+    </div>
+
+    <!-- ✅ Generate Report Button -->
+    <div style="margin-top: 1rem;">
+      <button id="download-report">📄 Generate Report</button>
+    </div>
+  </div>
+
+  <script>
+    const form = document.getElementById("scan-form");
+    const terminal = document.getElementById("terminal-body");
+    const stopButton = document.getElementById("stop-button");
+    const reportButton = document.getElementById("download-report");
+    const socket = io();
+
+    form.addEventListener("submit", async function (e) {
+      e.preventDefault();
+      terminal.innerHTML = "<p>🚀 Starting scan...</p>";
+
+      const formData = new FormData(form);
+      const response = await fetch("/start_scan", {
+        method: "POST",
+        body: formData
+      });
+
+      const result = await response.json();
+      terminal.innerHTML += `<p>✅ ${result.message}</p>`;
+    });
+
+    stopButton.addEventListener("click", async () => {
+      const res = await fetch("/stop_scan", {
+        method: "POST"
+      });
+      const result = await res.json();
+      terminal.innerHTML += `<p>🛑 ${result.message}</p>`;
+    });
+
+    reportButton.addEventListener("click", () => {
+      fetch("/download_report")
+        .then(response => {
+          if (response.ok) {
+            return response.blob();
+          }
+          throw new Error("Failed to download report");
+        })
+        .then(blob => {
+          const url = window.URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = "scan_report.csv";
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          window.URL.revokeObjectURL(url);
+        })
+        .catch(err => {
+          terminal.innerHTML += `<p>❌ ${err.message}</p>`;
+        });
+    });
+
+    socket.on("scan_update", (data) => {
+      const status = data.vulnerable ? "🛑 VULNERABLE" : "✅ Safe";
+      const line = `<div class="${data.vulnerable ? 'vulnerable' : 'safe'}">[${status}] ${data.url} (${data.time}s)</div>`;
+      terminal.innerHTML += line;
+      terminal.scrollTop = terminal.scrollHeight;
+    });
+
+    const toggle = document.getElementById("themeToggle");
+    toggle.addEventListener("change", () => {
+      document.body.classList.toggle("light-theme");
+      drawMatrix();
+      const isLight = document.body.classList.contains("light-theme");
+      if (material) material.color.set(isLight ? 0x000000 : 0x00ff3c);
+    });
+
+    const canvas = document.getElementById("matrix-background");
+    const ctx = canvas.getContext("2d");
+    const matrixCharacters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    const fontSize = 16;
+    let columns, drops;
+
+    function resizeCanvas() {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+      columns = canvas.width / fontSize;
+      drops = [];
+      for (let i = 0; i < columns; i++) {
+        drops[i] = Math.random() * canvas.height;
+      }
+    }
+
+    function drawMatrix() {
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.05)';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      const isLight = document.body.classList.contains("light-theme");
+      ctx.fillStyle = isLight ? '#000' : '#00ff3c';
+      ctx.font = `${fontSize}px monospace`;
+
+      for (let i = 0; i < drops.length; i++) {
+        const text = matrixCharacters.charAt(Math.floor(Math.random() * matrixCharacters.length));
+        ctx.fillText(text, i * fontSize, drops[i] * fontSize);
+        if (drops[i] * fontSize > canvas.height && Math.random() > 0.975) {
+          drops[i] = 0;
+        }
+        drops[i]++;
+      }
+    }
+
+    window.addEventListener('resize', resizeCanvas);
+    resizeCanvas();
+    setInterval(drawMatrix, 50);
+
+    let pointCloud, material;
+
+    window.onload = () => {
+      const threeContainer = document.getElementById('three-background');
+      const scene = new THREE.Scene();
+      const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 1, 1000);
+      camera.position.z = 100;
+
+      const renderer = new THREE.WebGLRenderer({ alpha: true });
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.domElement.classList.add('three-canvas');
+      threeContainer.appendChild(renderer.domElement);
+
+      const geometry = new THREE.BufferGeometry();
+      const particles = 10000;
+      const positions = new Float32Array(particles * 3);
+      for (let i = 0; i < particles * 3; i++) {
+        positions[i] = (Math.random() - 0.5) * 600;
+      }
+      geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+
+      material = new THREE.PointsMaterial({
+        color: 0x00ff3c,
+        size: 1,
+        transparent: true,
+        opacity: 0.6,
+      });
+
+      pointCloud = new THREE.Points(geometry, material);
+      scene.add(pointCloud);
+
+      function animateParticles() {
+        requestAnimationFrame(animateParticles);
+        pointCloud.rotation.y += 0.0008;
+        pointCloud.rotation.x += 0.0003;
+        renderer.render(scene, camera);
+      }
+
+      animateParticles();
+
+      window.addEventListener('resize', () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+      });
+    };
+  </script>
+</body>
+</html>
